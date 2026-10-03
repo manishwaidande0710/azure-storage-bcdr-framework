@@ -1,0 +1,35 @@
+// ========================================================
+// AZURE ENTERPRISE KQL SECURITY & OPERATIONS QUERY LIBRARY
+// ========================================================
+
+// 1. Audit Policy Denials & Compliance Blocks in the Last 24 Hours
+// Detects any time an administrator was blocked by an Azure Policy 'Deny' effect.
+AzureActivity
+| where TimeGenerated >= ago(24h)
+| where ActivitySubstatusValue has "Disallowed" or OperationNameValue has "policy"
+| project TimeGenerated, Caller, CallerIpAddress, OperationNameValue, ActivitySubstatusValue, ResourceGroup
+| order by TimeGenerated desc;
+
+// 2. Identify High-Severity Resource Deletions
+// Tracks who deleted or attempted to delete core infrastructure.
+AzureActivity
+| where TimeGenerated >= ago(7d)
+| where OperationNameValue endswith "delete"
+| summarize TotalDeletions = count() by Caller, ResourceGroup, OperationNameValue, ActivityStatusValue
+| order by TotalDeletions desc;
+
+// 3. Monitor Storage Account Anonymous Access Attempts
+// Verifies that no requests are bypassing Entra ID authentication.
+StorageBlobLogs
+| where TimeGenerated >= ago(24h)
+| where AuthenticationType == "Anonymous"
+| project TimeGenerated, AccountName, OperationName, CallerIpAddress, UserAgentHeader
+| order by TimeGenerated desc;
+
+// 4. Summarize VM Availability Status Transitions
+// Detects unexpected restarts or service outages.
+AzureActivity
+| where TimeGenerated >= ago(7d)
+| where OperationNameValue in ("Microsoft.Compute/virtualMachines/restart/action", "Microsoft.Compute/virtualMachines/deallocate/action")
+| summarize ActionCount = count() by Caller, OperationNameValue, bin(TimeGenerated, 1d)
+| render timechart;
